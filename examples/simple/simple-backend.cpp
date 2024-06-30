@@ -42,7 +42,7 @@ struct simple_model {
 };
 
 // initialize the tensors of the model in this case two matrices 2x2
-void load_model(simple_model & model, float * a, float * b, int rows_A, int cols_A, int rows_B, int cols_B) {
+void load_model(simple_model & model, std::vector<float> a, std::vector<int> b, int rows_A, int cols_A, int rows_B, int cols_B) {
     // initialize the backend
 #ifdef GGML_USE_CUDA
     fprintf(stderr, "%s: using CUDA backend\n", __func__);
@@ -78,15 +78,15 @@ void load_model(simple_model & model, float * a, float * b, int rows_A, int cols
     model.ctx = ggml_init(params);
 
     // create tensors
-    model.a = ggml_new_tensor_2d(model.ctx, GGML_TYPE_F32, cols_A, rows_A);
-    model.b = ggml_new_tensor_2d(model.ctx, GGML_TYPE_F32, cols_B, rows_B);
+    model.a = ggml_new_tensor_2d(model.ctx, GGML_TYPE_F32, 16, 32);
+    model.b = ggml_new_tensor_2d(model.ctx, GGML_TYPE_I32, 65536, 1);
 
     // create a backend buffer (backend memory) and alloc the tensors from the context
     model.buffer = ggml_backend_alloc_ctx_tensors(model.ctx, model.backend);
 
     // load data from cpu memory to backend buffer
-    ggml_backend_tensor_set(model.a, a, 0, ggml_nbytes(model.a));
-    ggml_backend_tensor_set(model.b, b, 0, ggml_nbytes(model.b));
+    ggml_backend_tensor_set(model.a, a.data(), 0, ggml_nbytes(model.a));
+    ggml_backend_tensor_set(model.b, b.data(), 0, ggml_nbytes(model.b));
 }
 
 // build the compute graph to perform a matrix multiplication
@@ -106,7 +106,7 @@ struct ggml_cgraph * build_graph(const simple_model& model) {
     struct ggml_cgraph  * gf = ggml_new_graph(ctx0);
 
     // result = a*b^T
-    struct ggml_tensor * result = ggml_mul_mat(ctx0, model.a, model.b);
+    struct ggml_tensor * result = ggml_get_rows(ctx0, model.a, model.b);
 
     // build operations nodes
     ggml_build_forward_expand(gf, result);
@@ -149,23 +149,14 @@ int main(void) {
     // initialize data of matrices to perform matrix multiplication
     const int rows_A = 4, cols_A = 2;
 
-    float matrix_A[rows_A * cols_A] = {
-        2, 8,
-        5, 1,
-        4, 2,
-        8, 6
-    };
+    std::vector<float> matrix_A(16*32, 0);
 
     const int rows_B = 3, cols_B = 2;
     /* Transpose([
         10, 9, 5,
         5, 9, 4
     ]) 2 rows, 3 cols */
-    float matrix_B[rows_B * cols_B] = {
-        10, 5,
-        9, 9,
-        5, 4
-    };
+    std::vector<int> matrix_B(65536, 0);
 
     simple_model model;
     load_model(model, matrix_A, matrix_B, rows_A, cols_A, rows_B, cols_B);
